@@ -35,8 +35,8 @@ class QueueManager:
 
             logger.info("[Master] Подключаюсь к БД для получения данных авторизации...")
             rpc_host = '***'
-            rpc_user = '***'
-            rpc_password = '***' 
+            rpc_user = '***' #await self.db_client.get_data_variable('rpc_user')
+            rpc_password = '***' #await self.db_client.get_data_variable('rpc_password')
 
             logger.info("[Master] Подключаюсь к очереди RabbitMQ...")
             try:

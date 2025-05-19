@@ -5,10 +5,10 @@ import uuid
 from datetime import datetime
 from db_client import DBClient
 from rabbit_client import QueueManager
-from loger import Log
+from config_logger import Log
 import weakref
 import json
-from loger import configure_logging, configure_dps_logger
+from config_logger import configure_logging, configure_dps_logger
 import logging
 import traceback
 
@@ -18,8 +18,8 @@ activity = [0.0, 0.0]
 futures = weakref.WeakValueDictionary()
 pool_tasks = []
 # список заблокированных задач
-banned = dict()
-# самописный класс для работы с БД
+banned = {}
+
 db_client = DBClient('***', ***, '***', '***', '***')
 dps_logger = configure_dps_logger()
 
@@ -57,32 +57,39 @@ def remove_track_task(task):
             logger.warning(f"[Master] Задача функции {task.get_name()} завершилась с исключением: {task.exception()}")
         else:
             logger.info(f"[Master] Задача функции {task.get_name()} успешно завершилась")
+
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"[Master] При удалении задачи функции {task.get_name()} произошла ошибка! {e} - {error_details}", exc_info=True)
 
 async def timeout_task(key):
     """
-    Функция, которая после 60 * 10 (мин) удаляет из списка futures задачу.
-    Если задача висит более 10 мин, значит что-то пошло не так и что бы не ломать
-    работу мы просто удаляем ее
+    После 60 * 10 (мин) удаляет из списка futures задачу.
+    Если задача висит более 10 мин, значит что-то пошло не так и что бы не ломать работу мы просто удаляем ее.
+
     :param key: ИД задачи (task_id)
     :return: ¯\_(ツ)_/¯
     """
-    await asyncio.sleep(60 * 10)
-    try:
-        # Пробуем установить ответ, чтобы функция track_futures завершила задачу
-        # Этот ответ вызвет Except т.к в ответе после : не json строка
-        # Но нам Except скорее на руку
-        future: asyncio.Future = futures.get(key)
-        future.set_result(b'1:task was destroyed by timeout!')
-        logger.warning(f"Задача {key} преждевременно удалена по таймауту")
-        # Если задача уже не отслеживается track_futures, но есть в futures, просто тупо удаляем ее
-        # Но ждем 20 секунд, чтобы track_futures успела отработать
-        await asyncio.sleep(20)
-        futures.pop(key)
-    except Exception as e:
-        pass
+    elapsed = 0.0
+    timeout_seconds = 60 * 10 # таймаут 10 мин
+    check_interval = 10 # интервал 10 сек
+
+    while elapsed < timeout_seconds:
+        await asyncio.sleep(check_interval)
+        elapsed += check_interval
+
+        # Если future уже удалена значит задача завершилась выходим
+        if key not in futures:
+            return
+
+    # Если после таймаута задача еще есть, то насильно завершаем
+    future: asyncio.Future = futures.get(key)
+    if future and not future.done():
+        try:
+            future.set_result(b'1:task was destroyed by timeout!')
+            logger.warning(f"Задача {key} преждевременно удалена по таймауту")
+        except Exception as e:
+            logger.error(f"Ошибка при установке результата future по таймауту: {e}")
 
 async def unban(key):
     """
@@ -101,6 +108,7 @@ async def unban(key):
         error_details = traceback.format_exc()
         logger.error(f"[Master] unban error! {error_details}\n", exc_info=True)
 
+
 async def unsuccessful_task(result_task: dict):
     """
     Функция, которая обрабатывает НЕ успешно завершенные задачи
@@ -108,9 +116,14 @@ async def unsuccessful_task(result_task: dict):
 
     :return: ¯\_(ツ)_/¯
     """
-    # Просто записываем лог задачи
-    info = result_task['info']
-    dps_logger.info(info)
+    # Лог выполнения задачи
+    log = result_task["log"]
+    dps_logger.info(log)
+
+    # # Просто записываем лог задачи
+    # info = result_task['info']
+    # dps_logger.info(info)
+
 
 async def completed_task(result_task: dict):
     """
@@ -120,34 +133,26 @@ async def completed_task(result_task: dict):
 
     :return: ¯\_(ツ)_/¯
     """
-
     # Лог выполнения задачи
-    info = result_task['info']
-    # Ответ воркера на задачу
-    result: list = result_task['result']
+    log = result_task["log"]
+    # Получаем результат ответа
+    response = result_task["response"] # [[type, bind_id], ...]
 
-
-    if isinstance(result[0], list):
-        # когда result список списков, то ответ работы со свитчем
-        for item in result:
-            match item[1]:
-                case 'DELETED':
-                    await db_client.delete_record(item[2])
-                case 'MODIFY':
-                    await db_client.modify_record(item[2])
-
-    elif isinstance(result, list):
-        # когда result это просто список знат гейпон
-        match result[1]:
+    for item in response:
+        _type, bind_id = item  #[тип задачи, ид бинда]
+        match _type:
+            case 'DELETED':
+                await db_client.delete_record(bind_id)
+            case 'MODIFY':
+                await db_client.modify_record(bind_id)
             case 'DELETED_GPON':
-                await db_client.delete_record_gpon(result[2])
+                await db_client.delete_record_gpon(bind_id)
             case 'MODIFY_GPON':
-                await db_client.modify_record_gpon(result[2])
-    else:
-        logger.warning(f"[Master] Получен неизвестный объект для обработки (type:{type(result)}, data:{result})")
+                await db_client.modify_record_gpon(bind_id)
+            case _:
+                logger.warning(f"[Master] Получен неизвестный тип задачи _type=(type:{type(_type)}, value:{_type})")
 
-    dps_logger.info(info)
-
+    dps_logger.info(log)
 
 async def track_futures(task_id, loop):
     """
@@ -181,7 +186,6 @@ async def track_futures(task_id, loop):
 
         return
 
-
     logger.info(f"[Master] Задача {task_id} вернула данные: {result.decode('utf-8').encode().decode('unicode_escape')}")
 
     # Парсим результат выполнения задачи
@@ -192,16 +196,17 @@ async def track_futures(task_id, loop):
         futures.pop(task_id)
         return
 
+    # превращаем json строку в dict
     result_task: dict = json.loads(json_part.decode('utf-8'))
 
-    # Если код ответа 0 и ответ задачи True(бля...не тру тут сложно кароч) фикшу), то считаем задачу успешно завершенной
-    if code == 0 and result_task['response']:
-        await completed_task(result_task)
+    # Если код ответа 0 и success, то считаем задачу успешно завершенной
+    if code == 0 and result_task["success"]:
+        await completed_task(result_task)   # Изменения в БД + лог
         logger.info(f"[Master] Задача {task_id} выполнена и удалена из отслеживания")
         return
 
     # Если что-то не так, то считаем задачу завершенной, но не успешно
-    await unsuccessful_task(json_part)
+    await unsuccessful_task(json_part) # тут просто пока пишем лог
     logger.warning(f"[Master] Задача {task_id} выполнена, но не успешно! result: {result.decode('utf-8').encode().decode('unicode_escape')}")
     banned[task_id] = 'lock'
     futures.pop(task_id)
@@ -227,31 +232,36 @@ async def create_task(loop):
 
     # Работаем
     while True:
-
         # logger.info(f"[Master] Кручусь! Ожидаю работу!")
         # Если задач меньше 10, то входим в условие
         if len(futures) < 10:
             try:
                 # Получаем список задач для синхронизации ethernet абонентов
-                switchs_to_sync = await db_client.get_switch_list_to_sync(list(banned.keys()) + list(futures.keys()))
+                switchs_to_sync =   await db_client.get_switch_list_to_sync(list(banned.keys()) + list(futures.keys()))
+                #   "device_ip": switch ip,
+                #   "community": login:pass,
+                #   "device_name": model_switch,
+                #   "binds": [[], [], []]
+
                 # Получаем список задач для синхронизации gpon абонентов
-                work_gpon = await db_client.get_work_gpon(list(banned.keys()) + list(futures.keys()))
+                gpon_binds_to_sync = await db_client.get_gpon_bind_list_to_sync(list(banned.keys()) + list(futures.keys()))
+                #   "ip": bind ip,
+                #   "mac": bind mac,
+                #   "change_type": deleted/modify,
+                #   "mode": 0 or 1
+                #   "id": bind_id
+
                 # Мы живы!
                 activity[1] = datetime.now().timestamp()
 
-                # task = {
-                # "device_ip":row["device_ip"],
-                # "community":row["community"],
-                # "device_name": row["device_name"],
-                # "binds": row["bind_info"]
-                # }
                 for task in switchs_to_sync:
                     activity[1] = datetime.now().timestamp()
                     # Самописный класс для работы с очередью
                     queue_manager = QueueManager(futures, db_client)
 
-                    task_id = task["device_ip"] + f"-{uuid.uuid4()}"
+                    task_id = f"{task["device_ip"]}-{uuid.uuid4()}"
                     task["task_id"] = task_id
+                    task["device_name"] = task["device_name"].split(' ')[1]
                     logger.info(f"[Master] Создаю задачу: {task}")
 
                     # Отправляем задачу в очередь
@@ -273,20 +283,18 @@ async def create_task(loop):
 
                     pool_tasks.append(_task)
 
-                # todo переделать как на switchs_to_sync
-                # Обрабатываем каждую задачу из списка
-                for work in work_gpon:
+                for task in gpon_binds_to_sync:
                     activity[1] = datetime.now().timestamp()
 
                     # Самописный класс для работы с очередью
                     queue_manager = QueueManager(futures, db_client)
 
-                    logger.info(f"[Master] Создаю задачу: {work}")
-                    task_id = f"{work['ip']}-{uuid.uuid4()}"
-                    work['task_id'] = task_id
+                    logger.info(f"[Master] Создаю задачу: {task}")
+                    task_id = f"{task['ip']}-{uuid.uuid4()}"
+                    task['task_id'] = task_id
                     # Отправляем задачу в очередь
                     future = loop.create_task(
-                        queue_manager.send_to_queue("sync_nat_tasks", work),
+                        queue_manager.send_to_queue("sync_nat_tasks", task),
                         name=f"send-task-{task_id}"
                     )
                     futures[task_id] = future
@@ -311,6 +319,7 @@ async def create_task(loop):
 
         # Задержка, чтобы процессору было не так больно
         await asyncio.sleep(5)
+
 
 async def main():
     await db_client.create_pool()

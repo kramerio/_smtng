@@ -418,10 +418,11 @@ class ExtremeTelnetClient(object):
 
     def port_clear(self, port):
         """
-            Disable port for usage.
-            We actually do not disable it we just remove vlans and clear ACLs
+        Disable port for usage.
+        We actually do not disable it we just remove vlans and clear ACLs
         """
         result_vlans = self.vlans_del(port)
+        # Если хоть 1 влан был удален, то True
         result_vlans = True if any(result_vlans) else False
         result_filter = self.ip_filter_del(port)
         return result_vlans and result_filter

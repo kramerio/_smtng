@@ -57,7 +57,7 @@ class DBClient:
             await asyncio.sleep(1)
         return None
 
-    async def modify_record(self, id: str):
+    async def modify_record(self, bind_id: str):
         async with self.pool.acquire() as conn:
             query = """
                 INSERT INTO network_bindstatus_real (id, device_id, parent_id, net_id, ip, mac, port, mode)
@@ -82,7 +82,7 @@ class DBClient:
                 port = EXCLUDED.port,
                 mode = EXCLUDED.mode;
                 """
-            await conn.execute(query, id)
+            await conn.execute(query, bind_id)
 
     async def delete_record(self, id):
         async with self.pool.acquire() as conn:
@@ -128,6 +128,7 @@ class DBClient:
 
     async def fetch_many(self, query: str) -> list[any] | None:
         """ Fetch DB records """
+        logger.debug(f"fetch_many:SQL query={query}")
         async with self.pool.acquire() as conn:
             conn: asyncpg.Connection
             return await conn.fetch(query)
@@ -148,7 +149,7 @@ class DBClient:
             result = None
         return result
 
-    async def get_work_gpon(self, active: Optional[list[str]] = None) -> list[dict]:
+    async def get_gpon_bind_list_to_sync(self, active: Optional[list[str]] = None) -> list[dict]:
         where = ''
         if isinstance(active, list) and len(active):
             where = 'WHERE ip NOT IN ({})'.format(
@@ -163,8 +164,9 @@ class DBClient:
             {}
             LIMIT 50;
         """.format(where))
-        work = [{"ip": str(row["ip"]), "mac": row["mac"], "change_type":row["change_type"],"mode": row["mode"], "id":row["id"]} for row in result]
-        return work
+
+        task = [{"ip": str(row["ip"]), "mac": row["mac"], "change_type":row["change_type"],"mode": row["mode"], "id":row["id"]} for row in result]
+        return task
 
     async def get_device_ids(self,  active: list[str] = None) -> list[int]:
         """
@@ -252,8 +254,7 @@ class DBClient:
                 nb.net_id, 
                 nb.mode, 
                 nb.device_id,
-                nb.change_type,
-                nb.parent_id
+                nb.change_type
             FROM network_bind_diff nb
             WHERE nb.device_id IN ({})
         ),
@@ -271,7 +272,7 @@ class DBClient:
             di.device_ip, 
             di.community, 
             dm.device_name,
-            json_agg(json_build_array(bs.bind_ip, bs.port, ni.netclass, bs.mode, bs.change_type, bs.bind_id, bs.parent_id)) AS bind_info
+            json_agg(json_build_array(bs.bind_ip, bs.port, ni.netclass, bs.mode, bs.change_type, bs.bind_id)) AS bind_info
         FROM device_info di
         LEFT JOIN device_model dm ON di.device_model_id = dm.id
         LEFT JOIN bind_status bs ON di.id = bs.device_id
@@ -285,12 +286,13 @@ class DBClient:
         # device_ip community device_name bind_info
         for row in result:
             task = {
-                "device_ip": row["device_ip"],
+                "device_ip": str(row["device_ip"]),
                 "community": row["community"],
                 "device_name": row["device_name"],
-                "binds": row["bind_info"]
+                "binds": json.loads(row['bind_info']) if row['bind_info'] else []
             }
             formatted_result.append(task)
+
         return formatted_result
         # query1 = """
         #          WITH device_info AS (

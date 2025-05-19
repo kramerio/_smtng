@@ -1,22 +1,11 @@
 import asyncio
 import json
 from telnet_client import TelnetClient
-from utils import get_arp
+from utils import get_arp, fix_port
 import logging
 import traceback
 
 logger = logging.getLogger(__name__)
-
-def fix_port(raw_port) -> str:
-    _port = raw_port
-    if len(str(raw_port)) == 3:
-        _port = f"{str(raw_port)[:-2]}:{str(raw_port)[-2:]}"
-    elif len(str(raw_port)) > 3:
-        raise f"Номер порта не может быть таким {raw_port}"
-    return str(_port)
-
-def add_log(condition: bool, success_msg: str, failure_msg: str) -> str:
-    return success_msg if condition else failure_msg
 
 #
 #   GPON
@@ -45,7 +34,7 @@ async def process_onu_test(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
     if await asyncio.to_thread(tc.auth):
@@ -95,7 +84,7 @@ async def process_onu_test(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 
@@ -121,7 +110,7 @@ async def process_show_onu_information_interface(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
     if await asyncio.to_thread(tc.auth):
@@ -139,7 +128,7 @@ async def process_show_onu_information_interface(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 async def process_unconfigure_onu(task_data, id):
@@ -165,7 +154,7 @@ async def process_unconfigure_onu(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
 
@@ -204,7 +193,7 @@ async def process_unconfigure_onu(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 async def process_reconfigure_onu(task_data, id):
@@ -231,7 +220,7 @@ async def process_reconfigure_onu(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
 
@@ -290,7 +279,7 @@ async def process_reconfigure_onu(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 async def process_configure_onu(task_data, id):
@@ -317,7 +306,7 @@ async def process_configure_onu(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
     if await asyncio.to_thread(tc.auth):
@@ -369,7 +358,7 @@ async def process_configure_onu(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 async def process_show_mac_onu(task_data, id):
@@ -395,7 +384,7 @@ async def process_show_mac_onu(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code": None, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
 
@@ -413,7 +402,7 @@ async def process_show_mac_onu(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": 1000, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 async def process_show_onu_information_sn(task_data, id):
@@ -438,7 +427,7 @@ async def process_show_onu_information_sn(task_data, id):
 
     except Exception as e:
         logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
-        data["error"] = {"code":None, "msg":f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
+        data["error"] = {"code": 100, "msg":f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
     if await asyncio.to_thread(tc.auth):
@@ -467,205 +456,166 @@ async def process_show_onu_information_sn(task_data, id):
 
     else:
         logger.error(f"[Consumer id:{id}] Не удалось авторизоваться на свитче {_model}({_device_ip})")
-        data["error"] = {"code": None,"msg": f"Failed to login to switch {_model}({_device_ip})"}
+        data["error"] = {"code": 100,"msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
 
 
 #
 #   ETHERNET
 #
-
-#todo привести инет функции +- к виду как у gpon
-# хочу отказатся от варианта с tasks. Нужно выделить денек-два и сделать по меньше try except'ов.
-# Но для этого нужно более четко понимать dlink.py и extreme.py, а к ним руки доходить не хотят
+#todo думаю стоит ли обьеденить process_clear_switch_ports и process_clear_switch_port в одну
+# делают то они одно и тоже...
 async def process_clear_switch_ports(task_data, id):
     """
-    Функция, которая передует синхронизации. Очищает вланы и acl с указанных портов в task_data['bind']
-    :param task_data: данные для задачи
-    :param id: id worker'a
-    :return: код результата, ответ
+    Очищает acl и vlan'ы с указанных портов в task_data['ports'].
+
+    :param task_data: payload задачи.
+    :param id: ИД воркера, который выполняет задачу.
+
+    :return: возвращаем ответ на задачу (int, str)
     """
     # Парсим payload на отдельные переменные для удобства
     _tmp = json.loads(task_data)
     _device_ip = _tmp['device_ip']
     _model = _tmp['device_name']
     _community = _tmp['community']
-    _ports = _tmp['bind']
+    ports = _tmp['ports']   # [1, 2, ...]
 
-    data = {"response": False, "log": ''}
-    # Пробуем подключится к свитчу
+    data = {
+        "success": False,
+        "response": None,
+        "error": None
+    }
+
     try:
         tc = await asyncio.to_thread(
-            lambda: TelnetClient(
-                _model,
-                _device_ip,
-                None,
-                _community.split(":")[0],
-                _community.split(":")[1],
-            )
+            lambda: TelnetClient(_model, _device_ip, None, _community.split(':')[0],
+                                 _community.split(':')[1])
         )
         await asyncio.to_thread(tc.connect)
+
     except Exception as e:
+        logger.error(f"[Consumer id:{id}]process_clear_switch_ports: Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
-    # Авторизация на свитче
     if await asyncio.to_thread(tc.auth):
-        is_success = True
         logger.info(f"[Consumer id:{id}] Подключился к свитчу {_model}({_device_ip})")
-
-        for port in _ports:
+        # каждый порт очищаем
+        for port in ports:
             # Проверка на корректность порта
             try:
                 port = fix_port(port)
             except Exception as e:
-                logger.error(f"[Consumer id:{id}]process_clear_switch_ports: Error - {e}")
+                logger.error(f"[Consumer id:{id}]process_clear_switch_ports: Failed to fix port; Error: {e}")
                 continue
 
             try:
-                await asyncio.to_thread(tc.port_clear, port)
+                response = await asyncio.to_thread(tc.port_clear, port)  # True / False
+                logger.info(f"[Consumer id:{id}]process_clear_switch_ports: port_clear={port}: {response}")
             except Exception as e:
                 logger.error(f"[Consumer id:{id}]process_clear_switch_ports: port={port}; Error - {e}")
                 continue
 
-        try:
-            await asyncio.to_thread(tc.disconnect)
-        except Exception as e:
-            is_success = False
-    else:
-        logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_device_ip}")
-        is_success = False
-
-    logger.info(f"[Consumer id:{id}] Задача завершена")
-    # Если все ок, возвращаем код 0 и нагрузку, иначе код 1 и нагрузку
-    if is_success:
+        data["success"] = True
         data["response"] = True
-        return 0, json.dumps(data)
-    else:
-        return 1, json.dumps(data)
 
+        # Отключаемся
+        await asyncio.to_thread(tc.disconnect)
+
+        logger.info(f"[Consumer id:{id}] Работа завершена")
+        return 0, json.dumps(data)
+
+    else:
+        logger.error(f"[Consumer id:{id}]process_clear_switch_ports: Не удалось авторизоваться на свитче {_model}({_device_ip})")
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
+        return 1, json.dumps(data)
 
 async def process_clear_switch_port(task_data, id):
     """
-    Функция для очистки указаного порта в payload. Вызывается только при сохранении связки,
-    чтобы удалить старые настройки с порта
-    :param task_data: payload задачи
-    :param id: ИД номер воркера, который выполняет задачу
+    Очищает порт на свитче от acl и vlan'ов.
+
+    :param task_data: payload задачи.
+    :param id: ИД воркера, который выполняет задачу.
+
     :return: возвращаем ответ на задачу (int, str)
     """
-    log_parts = []
     # Парсим payload на отдельные переменные для удобства
     _tmp = json.loads(task_data)
     _device_ip = _tmp['device_ip']
     _model = _tmp['device_name']
     _community = _tmp['community']
-    _port = _tmp['bind']
-    # подготавливаем список для результатов выполнения диагностики
-    data = {"response": False, "log": None}
+    port = _tmp['port']
 
-    # Список функций, которые будут выполнены
-    tasks = [
-        {
-            "action": lambda tc: asyncio.to_thread(tc.port_clear, _port),
-            "results": 2,
-            "success": f"|Порт {_port} очищен успешно!\n",
-            "failure": f"|Не удалось очистить порт {_port}!\n",
-        },
-    ]
+
+    data = {
+        "success": False,
+        "response": None,
+        "error": None
+    }
+
     # Проверка на корректность порта
+    # Иногда в либре есть порты типа 122, 108 и т.п, но по сути это порты 1:22 и 1:08
+    # А иногда и четырех значные числа, но это уже бред
     try:
-        _port = fix_port(_port)
+        port = fix_port(port)
     except Exception as e:
-        log_parts.append(f"[Работа со свитчем пошла не по плану! Ошибка: {e}\n")
-        log = "".join(log_parts)
-        data['log'] = log
+        logger.error(f"[Consumer id:{id}]process_clear_switch_port: Failed to fix port; Error: {e}")
+        data["error"] = {"code": 5001, "msg": f"Failed to fix port {port}; Error: {e}"}
         return 1, json.dumps(data)
 
-    # Пробуем подключится к свитчу
     try:
         tc = await asyncio.to_thread(
-            lambda: TelnetClient(
-                _model,
-                _device_ip,
-                None,
-                _community.split(":")[0],
-                _community.split(":")[1],
-            )
+            lambda: TelnetClient(_model, _device_ip, None, _community.split(':')[0],
+                                 _community.split(':')[1])
         )
         await asyncio.to_thread(tc.connect)
+
     except Exception as e:
-        log_parts.append(f"[Не удалось подключится к свитчу {_device_ip}. Ошибка: {e}\n")
-        log = "".join(log_parts)
-        data['log'] = log
+        logger.error(f"[Consumer id:{id}]process_clear_switch_port: Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
-    is_success = False
-    # Авторизация на свитче
     if await asyncio.to_thread(tc.auth):
-        is_success = True
-        log_parts.append(f'/Подключился к свитчу {_device_ip}\n')
         logger.info(f"[Consumer id:{id}] Подключился к свитчу {_model}({_device_ip})")
-        # Выполнение задач и запись их результатов
-        for task in tasks:
-            try:
-                results = await task["action"](tc)
-                if task["results"] == 1:
-                    # Для одиночного результата
-                    log_parts.append(add_log(results, task["success"], task["failure"]))
-                elif task.get("combine"):
-                    # Для комбинированных результатов
-                    log_parts.append(add_log(task["combine"](results), task["success"], task["failure"]))
-                elif "messages" in task:
-                    # Для индивидуального логирования по каждому результату
-                    for idx, success_msg, failure_msg in task["messages"]:
-                        log_parts.append(add_log(results[idx], success_msg, failure_msg))
-                if not results:
-                    log_parts.append(f"\Работа со свитчем пошла не по плану!\n")
-                    is_success = False
-                    break  # Прекращаем выполнение на первой ошибке
-            except Exception as e:
-                log_parts.append(f"\Работа со свитчем пошла не по плану! Ошибка: {e}\n")
-                is_success = False
-                break
-        try:
-            await asyncio.to_thread(tc.disconnect)
-            log_parts.append(f'\Отключился от свитча\n')
-        except Exception as e:
-            pass
-            # log_parts.append(f'\Сохранение пошло не по плану! Ошибка: {e}\n')
-            # is_success = False
-    else:
-        log_parts.append(f"[Не удалось подключиться к свитчу {_device_ip}\n")
-        logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_device_ip}")
-        is_success = False
 
-    log = "".join(log_parts)
-    data['log'] = log
-    logger.info(f"[Consumer id:{id}] Задача завершена")
-    # Если все ок, возвращаем код 0 и нагрузку, иначе код 1 и нагрузку
-    if is_success:
-        data["response"] = True
+        response = await asyncio.to_thread(tc.port_clear, port)  # True / False
+        logger.info(f"[Consumer id:{id}] response={response}")
+
+        data["success"] = True
+        data["response"] = response
+
+        # Отключаемся
+        await asyncio.to_thread(tc.disconnect)
+
+        logger.info(f"[Consumer id:{id}] Работа завершена")
         return 0, json.dumps(data)
+
     else:
+        logger.error(f"[Consumer id:{id}]process_clear_switch_port: Не удалось авторизоваться на свитче {_model}({_device_ip})")
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
+
 
 async def process_port_test(task_data, id):
     """
-    Функция тестирования порта.
+    Тестирования порта на свитче.
+
     :param task_data: payload задачи
-    :param id: ИД номер воркера, который выполняет задачу
+    :param id: ИД воркера, который выполняет задачу
+
     :return: Возвращаем ответ на задачу (int, str)
     """
-    log_parts = []
-
-    # Парсим payload на отдельные переменные для удобства
+    # Парсим payload на отдельные переменные
     _tmp = json.loads(task_data)
     _device_ip = _tmp['device_ip']
     _model = _tmp['device_name']
     _community = _tmp['community']
-    bind = _tmp['bind']
+
+    ip, port, vlan, mode, aserver_ip = _tmp['bind'] # [ip, port, vlan, mode, aserver.ip]
 
     # подготавливаем список для результатов выполнения диагностики
-    results = {
+    response = {
         "vlans": None,
         "speed": None,
         "macs": None,
@@ -675,86 +625,58 @@ async def process_port_test(task_data, id):
     }
     # Подготавливаем payload для ответа
     data = {
-        "response": False,
-        "log": None
+        "success": False,
+        "response": None,
+        "error": None
     }
-    # Список функций, которые будут выполнены
-    tasks = [
-        {"action": lambda tc: asyncio.to_thread(tc.get_vlans, bind[1]), "result": "vlans"},
-        {"action": lambda tc: asyncio.to_thread(tc.get_speed, bind[1]), "result": "speed"},
-        {"action": lambda tc: asyncio.to_thread(tc.get_macs, bind[1]), "result": "macs"},
-        {"action": lambda tc: asyncio.to_thread(tc.get_state, bind[1]), "result": "state"},
-        {"action": lambda tc: asyncio.to_thread(tc.cable_diag, bind[1]), "result": "diag"},
-        {"action": lambda tc: asyncio.to_thread(get_arp, bind[0], bind[2], bind[3], bind[4]), "result": "arp"},
-    ]
+
     # Проверка на корректность порта
     # Иногда в либре есть порты типа 122, 108 и т.п, но по сути это порты 1:22 и 1:08
     # А иногда и четырех значные числа, но это уже бред
     try:
-        bind[1] = fix_port( bind[1])
+        port = fix_port(port)
     except Exception as e:
-        log_parts.append(f"[Работа со свитчем пошла не по плану! Ошибка: {e}\n")
-        log = "".join(log_parts)
-        data['log'] = log
+        logger.error(f"[Consumer id:{id}]process_port_test: Failed to fix port; Error: {e}")
+        data["error"] = {"code": 5001, "msg": f"Failed to fix port {port}; Error: {e}"}
         return 1, json.dumps(data)
 
-    # Пробуем подключится к свитчу
     try:
         tc = await asyncio.to_thread(
             lambda: TelnetClient(_model, _device_ip, None, _community.split(':')[0],
                                  _community.split(':')[1])
         )
         await asyncio.to_thread(tc.connect)
+
     except Exception as e:
-        log_parts.append(f"[Не удалось подключиться к свитчу {_device_ip}. Ошибка: {e}\n")
-        log = "".join(log_parts)
-        data['log'] = log
+        logger.error(f"[Consumer id:{id}]process_port_test: Не удалось подключиться к свитчу {_model}({_device_ip}). Error: {e}")
+        data["error"] = {"code": 100, "msg": f"An error occurred while connecting to the switch {_model}({_device_ip}). Error: {e}"}
         return 1, json.dumps(data)
 
-    # Авторизация на свитче
     if await asyncio.to_thread(tc.auth):
-        log_parts.append(f'/Подключился к свитчу {_device_ip}\n')
         logger.info(f"[Consumer id:{id}] Подключился к свитчу {_model}({_device_ip})")
-        log_parts.append(f'|Сбор данных с порта {bind[1]}...\n')
-        # Выполнение задач и запись их результатов
-        is_available = True
-        for task in tasks:
-            try:
-                result = await task["action"](tc)
-                results[task["result"]] = result
-            except Exception as e:
-                log_parts.append(f"|Ошибка при выполнении задачи {task['result']}: {e}\n")
-                break
-        try:
-            await asyncio.to_thread(tc.disconnect)
-            log_parts.append(f"\Отключился от свитча\n")
-        except Exception as e:
-            log_parts.append(f"\Ошибка при отключении от свитча: {e}\n")
+        response["is_available"] = True
+        # собираем инфу
+        response["vlans"] = await asyncio.to_thread(tc.get_vlans, port) # [vlan, vlan, ...]
+        response["speed"] = await asyncio.to_thread(tc.get_speed, port)  # dict{tx:0,rx:0} or None
+        response["macs"] = await asyncio.to_thread(tc.get_macs, port)  # [mac, mac, ...]
+        response["state"] = await asyncio.to_thread(tc.get_state, port)  # (bool, bool)
+        response["diag"] = await asyncio.to_thread(tc.cable_diag, port)  # dict{lst: match.group("lst"), clen: match.group("clen"), pair: pairs if pairs else None}
+        response["arp"] = await asyncio.to_thread(get_arp, ip, vlan, mode, aserver_ip)  # str or False
 
-    else:
-        logger.error(f"[Consumer id:{id}] Не удалось подключиться к свитчу {_device_ip}")
-        log_parts.append(f"[Не удалось подключиться к свитчу {_device_ip}\n")
-        is_available = False
+        data["success"] = True
+        data["response"] = response
 
-    # Формируем окончательный вариант ответа
-    data = {
-        "is_available": is_available,
-        "state": results["state"],
-        "speed": results["speed"],
-        "vlans": results["vlans"],
-        "diag": results["diag"],
-        "macs": results["macs"],
-        "arp": results["arp"],
-        "response": True
-    }
-    log = "".join(log_parts)
-    data['log'] = log
-    logger.info(f"[Consumer id:{id}] Задача завершена")
-    # Если все ок, возвращаем код 0 и нагрузку, иначе код 1 и нагрузку
-    if is_available:
+        # Отключаемся
+        await asyncio.to_thread(tc.disconnect)
+
+        logger.info(f"[Consumer id:{id}] Работа завершена")
         return 0, json.dumps(data)
+
     else:
+        logger.error(f"[Consumer id:{id}]process_port_test: Не удалось авторизоваться на свитче {_model}({_device_ip})")
+        data["error"] = {"code": 101, "msg": f"Failed to login to switch {_model}({_device_ip})"}
         return 1, json.dumps(data)
+
 
 async def process_diagnostic(task_data, id):
     """

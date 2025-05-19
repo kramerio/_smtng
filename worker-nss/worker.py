@@ -2,10 +2,10 @@ import functools
 import aio_pika
 from action import *
 from sync import *
-from loger import *
+from config_logger import *
 
 
-AMQP_LINK = "amqp://***:***@***/" 
+AMQP_LINK = "amqp://****/"
 
 async def process_task(task_data, id, cmd):
     """

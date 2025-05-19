@@ -91,7 +91,7 @@ class OltSwitch:
                 if result[0] >= 0:
                     _try -= 1
                     # Вводим логин и ждем приглашение на ввод пароля
-                    self.write(self.encode_message(self.login))
+                    self.write(self.login)
                     result = self.t.expect(self.encode_message(["PassWord:", "Password:", "password:", "#", ">"]), self.TIMEOUT)
                     logger.info(f"auth: raw={result[2]}")
                     # Если нет ничего(странно...) возвращаем ложь
@@ -105,7 +105,7 @@ class OltSwitch:
                     # Иначе если все таки приглашение на ввод пароля:
                     else:
                         # Вводим пароль и ждем приглашение "#", ">" в shell(ну или какую-то оболочку) свитча
-                        self.write(self.encode_message(self.password))
+                        self.write(self.password)
                         result = self.t.expect(self.encode_message(["#", ">", "Authentication failed!", "Fail", "fail"]), self.TIMEOUT)
                         logger.info(f"auth: raw={result[2]}")
                         # Если "#", ">", то зашли на свитч успешно
@@ -117,15 +117,15 @@ class OltSwitch:
                     # Если приветствия логина нет, считаем что попали на свитч без авторизации
                     self.is_auth = True
 
-            # Если авторизовались настраиваем ебаный бдком олт чтобы нормально парсить вывод. ПИЗДЕЦ!!!
+            # Если авторизовались настраиваем ебаный бдком олт чтоб нормально парсить вывод((
             # Почему так не сделать по умолчанию - загадка BDCOM инженеров
             if self.is_auth:
-                self.write(self.encode_message('enable'))
+                self.write("enable")
                 self.t.read_until(self.encode_message(self.PROMPT), self.TIMEOUT).decode("ascii", errors="ignore")
-                self.write(self.encode_message('config'))
-                self.write(self.encode_message('terminal length 0'))
-                self.write(self.encode_message('terminal width 0'))
-                self.write(self.encode_message('exit'))
+                self.write("config")
+                self.write("terminal length 0")
+                self.write("terminal width 0")
+                self.write("exit")
                 self.t.read_until(self.encode_message(self.PROMPT), self.TIMEOUT).decode("ascii", errors="ignore")
 
             return self.is_auth
@@ -158,10 +158,10 @@ class OltSwitch:
         try:
             sep_idx = next(
                 i for i, ln in enumerate(lines)
-                if re.match(r'^[\s-]+$', ln)
+                if re.match(r"^[\s-]+$", ln)
             )
         except StopIteration:
-            logger.info(f"show_onu_information_sn: table not found, return False")
+            logger.warning(f"show_onu_information_sn: table not found, return False")
             # таблицы нет вовсе
             return False
 
@@ -172,7 +172,7 @@ class OltSwitch:
                 if "IntfName" in ln
             )
         except StopIteration:
-            logger.info(f"show_onu_information_sn: header not found, return False")
+            logger.warning(f"show_onu_information_sn: header not found, return False")
             return False
 
         # Находим первую строку с данными (она начинается с GPON0/)
@@ -182,7 +182,7 @@ class OltSwitch:
                 if "GPON0/" in ln
             )
         except StopIteration:
-            logger.info(f"show_onu_information_sn: data not found, return False")
+            logger.warning(f"show_onu_information_sn: data not found, return False")
             return False
 
         # Получаем строку разделитель
@@ -192,9 +192,9 @@ class OltSwitch:
         header_line = lines[header_idx]
 
         # Определяем диапазоны колонок по кол-ву '-' в sep_line
-        col_ranges = [(m.start(), m.end()) for m in re.finditer(r'-+', sep_line)]
+        col_ranges = [(m.start(), m.end()) for m in re.finditer(r"-+", sep_line)]
         # Парсим названия колонок, убираем пробелы в названии столбцов
-        columns = [header_line[s:e].strip().replace(" ", "") for s, e in col_ranges]
+        columns = [header_line[s:e].strip().replace(' ', '') for s, e in col_ranges]
 
 
         # Собираем строки данных до пустой строки или Switch#
@@ -264,7 +264,7 @@ class OltSwitch:
 
         :return: [] or list[dict]
         """
-        cmd = f'show gpon onu-information interface GPON0/{phy_port}'
+        cmd = f"show gpon onu-information interface GPON0/{phy_port}"
 
         # отправляем команду
         self.write(cmd)
@@ -272,13 +272,14 @@ class OltSwitch:
         raw = self.t.read_until(self.encode_message(self.PROMPT)).decode("ascii", errors="ignore")
         logger.info(f"show_onu_information_interface: raw={raw}")
         lines = raw.splitlines()
+
         try:
             sep_idx = next(
                 i for i, ln in enumerate(lines)
-                if re.match(r'^[\s-]+$', ln)
+                if re.match(r"^[\s-]+$", ln)
             )
         except StopIteration:
-            logger.info(f"show_onu_information_interface: table not found, return []")
+            logger.warning(f"show_onu_information_interface: table not found, return []")
             # таблицы нет вовсе
             return []
 
@@ -289,17 +290,17 @@ class OltSwitch:
                 if "IntfName" in ln
             )
         except StopIteration:
-            logger.info(f"show_onu_information_interface: header not found, return []")
+            logger.warning(f"show_onu_information_interface: header not found, return []")
             return []
 
         # Находим первую строку с данными (она начинается с GPON0/)
         try:
             data_start = next(
                 i for i, ln in enumerate(lines)
-                if "GPON0/" in ln
+                if f"GPON0/{phy_port}:" in ln
             )
         except StopIteration:
-            logger.info(f"show_onu_information_interface: data not found, return []")
+            logger.warning(f"show_onu_information_interface: data not found, return []")
             return []
 
         # Получаем строку разделитель
@@ -309,9 +310,9 @@ class OltSwitch:
         header_line = lines[header_idx]
 
         # Определяем диапазоны колонок по кол-ву '-' в sep_line
-        col_ranges = [(m.start(), m.end()) for m in re.finditer(r'-+', sep_line)]
+        col_ranges = [(m.start(), m.end()) for m in re.finditer(r"-+", sep_line)]
         # Парсим названия колонок, убираем пробелы в названии столбцов
-        columns = [header_line[s:e].strip().replace(" ", "") for s, e in col_ranges]
+        columns = [header_line[s:e].strip().replace(' ', '') for s, e in col_ranges]
 
         # Собираем строки данных до пустой строки или Switch#
         data_lines = []
@@ -355,12 +356,12 @@ class OltSwitch:
 
     def show_lvl(self,phy_port,vport):
         try:
-            command = f'show gpon interface GPON0/{phy_port}:{vport} onu optical-transceiver-diagnosis'
+            command = f"show gpon interface GPON0/{phy_port}:{vport} onu optical-transceiver-diagnosis"
             self.write(command)
             time.sleep(1)
             output = self.t.read_until(self.encode_message(self.PROMPT)).decode("ascii", errors="ignore")
             logger.info(f"show_lvl: raw={output}")
-            output = output.split(f'{phy_port}:{vport}')[2].split()
+            output = output.split(f"{phy_port}:{vport}")[2].split()
             if output:
                 rx_lvl = output[3]
                 tx_lvl = output[4]
@@ -372,19 +373,19 @@ class OltSwitch:
 
     def show_mac(self,phy_port,vport):
         try:
-            command = f'show mac address-table interface GPON0/{phy_port}:{vport}'
+            command = f"show mac address-table interface GPON0/{phy_port}:{vport}"
             self.write(command)
             output = self.t.read_until(self.encode_message(self.PROMPT)).decode("ascii", errors="ignore")
             logger.info(f"show_mac: raw={output}")
-            output = output.split(f'{phy_port}:{vport}')[1].split('DYNAMIC')[0].split()[-1]
+            output = output.split(f"{phy_port}:{vport}")[1].split("DYNAMIC")[0].split()[-1]
             res = format_mac_address(output)
             if res:
                 return res
 
-            return 'NO DATA'
+            return "NO DATA"
         except Exception as e:
             logger.error(f"show_mac: ERROR - {e}")
-            return 'NO DATA'
+            return "NO DATA"
 
 
     def show_error(self,phy_port,vport):
@@ -399,7 +400,7 @@ class OltSwitch:
             "rdi": None,
         }
         try:
-            command = f'show interface gpoN0/{phy_port}:{vport}'
+            command = f"show interface gpoN0/{phy_port}:{vport}"
 
             received_packets_pattern = r"Received\s+(\d+)\s+packets"
             transmitted_packets_pattern = r"Transmitted\s+(\d+)\s+packets"
@@ -430,28 +431,28 @@ class OltSwitch:
             return data
 
     def register_onu(self, vlan,phy_port,vport):
-        command = f'interface GPON0/{phy_port}:{vport}'
-        command1 = f'gpon onu flow-mapping-profile {vlan}'
-        command2 = f'gpon onu uni 1 vlan-profile {vlan}'
-        command3 = f'gpon onu uni 1 uni-profile MTU'
+        command = f"interface GPON0/{phy_port}:{vport}"
+        command1 = f"gpon onu flow-mapping-profile {vlan}"
+        command2 = f"gpon onu uni 1 vlan-profile {vlan}"
+        command3 = f"gpon onu uni 1 uni-profile MTU"
         cmd = [command, command1, command2, command3]
         _PROMPT = f"Switch_config_gpon0/{phy_port}:{vport}#"
         try:
-            self.write('config')
+            self.write("config")
             for c in cmd:
                 self.write(c)
                 _t = self.t.read_until(self.encode_message(_PROMPT)).decode("ascii", errors="ignore")
                 logger.info(f"register_onu: raw={_t}")
 
-            self.write(f'show running-config interface GPON0/{phy_port}:{vport}')
+            self.write(f"show running-config interface GPON0/{phy_port}:{vport}")
             _t = self.t.read_until(self.encode_message(_PROMPT)).decode("ascii", errors="ignore")
             logger.info(f"register_onu: raw={_t}")
-            self.write('exit')
-            self.write('exit')
+            self.write("exit")
+            self.write("exit")
             self.t.read_until(self.encode_message(self.PROMPT)).decode("ascii", errors="ignore")
             logger.info(f"register_onu: saving config...")
             if vlan in _t:
-                self.write('write all')
+                self.write("write all")
                 _t = self.t.read_until(self.encode_message(self.PROMPT), self.TIMEOUT*4).decode("ascii", errors="ignore")
                 logger.info(f"register_onu: raw={_t}")
                 return True
@@ -466,23 +467,22 @@ class OltSwitch:
         #config
         #interface GPON0/x
         #no gpon bind-onu sn x
-        command = f'interface GPON0/{phy_port}'
-        command1 = f'no gpon bind-onu sn {sn}'
+        command = f"interface GPON0/{phy_port}"
+        command1 = f"no gpon bind-onu sn {sn}"
         cmd = [command, command1]
         _PROMPT = f"Switch_config_gpon0/{phy_port}#"
         try:
-            self.write('config')
+            self.write("config")
             for c in cmd:
                 self.write(c)
-                # _t = self.t.expect([b"#"], 2)
                 _t = self.t.read_until(self.encode_message(_PROMPT)).decode("ascii", errors="ignore")
                 logger.info(f"unregister_onu: raw={_t}")
 
-            self.write('exit')
-            self.write('exit')
+            self.write("exit")
+            self.write("exit")
             self.t.read_until(self.encode_message(self.PROMPT)).decode("ascii", errors="ignore")
             logger.info(f"unregister_onu: saving config...")
-            self.write('write all')
+            self.write("write all")
             _t = self.t.read_until(self.encode_message(self.PROMPT), self.TIMEOUT * 4).decode("ascii", errors="ignore")
             logger.info(f"unregister_onu: raw={_t}")
             return True
@@ -509,7 +509,7 @@ class OltSwitch:
     def write(self, command, new_line=True):
         """ writes command to telnet """
         if not self.connected:
-            raise EOFError('Telnet connection closed')
+            raise EOFError("Telnet connection closed")
 
         self.t.write(self.encode_message(command))
         if new_line:

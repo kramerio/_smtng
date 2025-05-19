@@ -376,6 +376,7 @@ class DLinkTelnetClient(object):
             group_dict = rr.groupdict()
             states.append(True if group_dict["state"].lower() == 'enabled' else False)
         return result, any(states)
+
     def get_vlans(self, port):
         port_vlans = []
         vlans_all = self.get_vlans_all()

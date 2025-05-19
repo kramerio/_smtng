@@ -1,7 +1,6 @@
 import asyncio
 import re
 import json
-from asyncio import subprocess
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,34 +17,42 @@ PUBLIC_IP_DEL = {
     "POSTROUTING":"/usr/sbin/iptables -t nat -D POSTROUTING -s {nat_ip}/32 -o ens2.125 -j SNAT --to-source {public_ip}"
 }
 
-def add_log(condition: bool, success_msg: str, failure_msg: str) -> str:
-    return success_msg if condition else failure_msg
-
-
-# todo переработать  обработки except
-async def unconfig_public_ip(task_data, id):
+async def unconfig_public_ip(task_data, worker_id):
     """
     Через iptables удаляет правило NAT, которое давало абоненту уникальный внешний IP
 
     :param task_data: полезная нагрузка, данные которые нужно обработать
-    :param id: ИД номер воркера, который выполняет задачу
+    :param worker_id: ИД воркера, который выполняет задачу
 
-    :return: возвращаем код результата и полезную нагрузку для ответа
+    :return: (int, str) код обработки и ответ json строка
     """
     _tmp = json.loads(task_data)
     ip = _tmp['ip']
     public_ip = _tmp['public_ip']
-    log = ''
-    data = {
-        "ip": ip,
-        "public_ip": public_ip,
-        "response": False,
-        "log": ''
-    }
-    try:
-        log = f"/Выполняю задачу \'unconfig_public_ip\' c IP {ip} -> {public_ip} на NAT-сервере (NSS)\n"
-        logger.info(f"[Consumer id:{id}] Удаляю правило PREROUTING {public_ip} -> {ip}")
 
+    data = {
+        "success": False,
+        "response": None,
+        "error": None
+    }
+
+    try:
+        # проверим есть ли правило вообще
+        process = await asyncio.create_subprocess_shell(
+            f"/usr/sbin/iptables -vnL -t nat | grep -w {ip}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        logger.info(f"[Consumer id:{worker_id}] Правило NAT table stdout={stdout}; stderr={stderr}")
+
+        if not stdout.strip():
+            data["success"] = True
+            data["response"] = True
+            logger.info(f"[Consumer id:{worker_id}] Правила NAT для {ip} не было")
+            return 0, json.dumps(data)
+
+        logger.info(f"[Consumer id:{worker_id}] Удаляю правило в NAT iptables для IP {ip}")
         # Выполняем команду на сервере
         process = await asyncio.create_subprocess_shell(
             PUBLIC_IP_DEL["PREROUTING"].format(public_ip=public_ip, nat_ip=ip),
@@ -54,69 +61,64 @@ async def unconfig_public_ip(task_data, id):
         )
         # Получаем вывод команды
         stdout, stderr = await process.communicate()
-        logger.info(f"[Consumer id:{id}] Удаляю правило POSTROUTING {ip} -> {public_ip}")
-        # Выполняем команду на сервере
+        logger.info(f"[Consumer id:{worker_id}] Правило PREROUTING stdout={stdout}; stderr={stderr}")
+
         process = await asyncio.create_subprocess_shell(
             PUBLIC_IP_DEL["POSTROUTING"].format(public_ip=public_ip, nat_ip=ip),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Получаем вывод команды
         stdout, stderr = await process.communicate()
-        log += f"|Удаляю правила...(NSS)\n"
-        logger.info(f"[Consumer id:{id}] Проверяю наличие правил {ip} в firewall")
-        # Выполняем команду на сервере
+        logger.info(f"[Consumer id:{worker_id}] Правило POSTROUTING stdout={stdout}; stderr={stderr}")
+
         process = await asyncio.create_subprocess_shell(
-            f"/usr/sbin/iptables -vnL -t nat | grep {ip}",
+            f"/usr/sbin/iptables -vnL -t nat | grep -w {ip}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Получаем вывод команды
         stdout, stderr = await process.communicate()
+        logger.info(f"[Consumer id:{worker_id}] Правило NAT table stdout={stdout}; stderr={stderr}")
 
+        data["success"] = True
         # Если вывода нет(правила добавлены), возвращаем True, иначе выводим False
         if not stdout.strip():
-            log += f"\Выполнения задачи успешно (NSS)\n"
-            data['log'] = log
-            data['response'] = True
-            logger.info(f"[Consumer id:{id}] Успешно настроен NAT {ip} -> {public_ip}")
+            data["response"] = True
+            logger.info(f"[Consumer id:{worker_id}] Успешно удален NAT {ip} -> {public_ip}")
             return 0, json.dumps(data)
+
         else:
-            log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-            data['log'] = log
-            logger.info(f"[Consumer id:{id}] НЕ успешно настроен NAT {ip} -> {public_ip}")
+            data["response"] = False
+            logger.info(f"[Consumer id:{worker_id}] НЕ успешно удален NAT {ip} -> {public_ip}")
             return 0, json.dumps(data)
+
     except Exception as e:
-        log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-        data['log'] = log
-        logger.error(f"[Consumer id:{id}]:unconfig_public_ip: Error - {e}", exc_info=True)
+        logger.error(f"[Consumer id:{worker_id}]:config_public_ip: Error - {e}", exc_info=True)
+        data["error"] = {"code": None, "msg": f"Error: {e}"}
         return 1, json.dumps(data)
 
 
-async def config_public_ip(task_data, id):
+async def config_public_ip(task_data, worker_id):
     """
-    Фунцкия, которая через iptables настраивает правило NAT, для выхода в интернет с уникальным внешним IP
-    :param task_data: полезная нагрузка, данные которые нужно обработать
-    :param id: ИД номер воркера, который выполняет задачу
-    :return: возвращаем код результата и полезную нагрузку для ответа
+    Через iptables настраивает правило NAT, для выхода в интернет с уникальным внешним IP.
+    :param task_data: полезная нагрузка, данные которые нужно обработать.
+    :param worker_id: ИД воркера, который выполняет задачу.
+    :return: (int, str) код обработки и ответ json строка
     """
     # Перед добавлением нового правила, пробуем удалить старые, которые настроены на этот IP
-    await unconfig_public_ip(task_data, id)
+    await unconfig_public_ip(task_data, worker_id)
 
     _tmp = json.loads(task_data)
     ip = _tmp['ip']
     public_ip = _tmp['public_ip']
-    log = ''
-    data = {
-        "ip": ip,
-        "public_ip": public_ip,
-        "response": False,
-        "log": ''
-    }
-    try:
-        log = f"/Выполняю задачу \'config_public_ip\' c IP {ip} -> {public_ip} на NAT-сервере (NSS)\n"
-        logger.info(f"[Consumer id:{id}] Добавляю правило PREROUTING {public_ip} -> {ip}")
 
+    data = {
+        "success": False,
+        "response": None,
+        "error": None
+    }
+
+    logger.info(f"[Consumer id:{worker_id}] Добавляю правила в NAT iptables {ip} -> {public_ip}")
+    try:
         # Выполняем команду на сервере
         process = await asyncio.create_subprocess_shell(
             PUBLIC_IP_ADD["PREROUTING"].format(public_ip=public_ip, nat_ip=ip),
@@ -125,162 +127,174 @@ async def config_public_ip(task_data, id):
         )
         # Получаем вывод команды
         stdout, stderr = await process.communicate()
-        logger.info(f"[Consumer id:{id}] Добавляю правило POSTROUTING {ip} -> {public_ip}")
-        # Выполняем команду на сервере
+        logger.info(f"[Consumer id:{worker_id}] Правило PREROUTING stdout={stdout}; stderr={stderr}")
+
         process = await asyncio.create_subprocess_shell(
             PUBLIC_IP_ADD["POSTROUTING"].format(public_ip=public_ip, nat_ip=ip),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Получаем вывод команды
         stdout, stderr = await process.communicate()
-        log += f"|Добавляю правила...(NSS)\n"
-        logger.info(f"[Consumer id:{id}] Проверяю наличие правил {ip} в firewall")
-        # Выполняем команду на сервере
+        logger.info(f"[Consumer id:{worker_id}] Правило POSTROUTING stdout={stdout}; stderr={stderr}")
         process = await asyncio.create_subprocess_shell(
-            f"/usr/sbin/iptables -vnL -t nat | grep {ip}",
+            f"/usr/sbin/iptables -vnL -t nat | grep -w {ip}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Получаем вывод команды
         stdout, stderr = await process.communicate()
+        logger.info(f"[Consumer id:{worker_id}] NAT table stdout={stdout}; stderr={stderr}")
+        data['success'] = True
 
         # Если вывод есть(правила добавлены), возвращаем True, иначе выводим False
         if stdout.strip():
-            log += f"\Выполнения задачи успешно (NSS)\n"
-            data['log'] = log
-            data['response'] = True
-            logger.info(f"[Consumer id:{id}] Успешно настроен NAT {ip} -> {public_ip}")
+            data["response"] = True
+            logger.info(f"[Consumer id:{worker_id}] Успешно настроен NAT {ip} -> {public_ip}")
             return 0, json.dumps(data)
         else:
-            log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-            data['log'] = log
-            logger.info(f"[Consumer id:{id}] НЕ успешно настроен NAT {ip} -> {public_ip}")
+            data["response"] = False
+            logger.info(f"[Consumer id:{worker_id}] НЕ успешно настроен NAT {ip} -> {public_ip}; stdout={stdout}; stderr={stderr}")
             return 0, json.dumps(data)
+
     except Exception as e:
-        log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-        data['log'] = log
-        logger.error(f"[Consumer id:{id}]:config_public_ip: Error - {e}", exc_info=True)
+        logger.error(f"[Consumer id:{worker_id}]:config_public_ip: Error - {e}", exc_info=True)
+        data["error"] = {"code": None, "msg": f"Error: {e}"}
         return 1, json.dumps(data)
 
 
-async def get_arp(task_data, id):
+
+async def get_arp(task_data, worker_id):
     """
-    Фунцкия, которая собирает arp записи по определенному IP
-    :param task_data: полезная нагрузка, данные которые нужно обработать
-    :param id: ИД номер воркера, который выполняет задачу
-    :return: возвращаем код результата и полезную нагрузку для ответа
+    Получает arp запись по определенному IP и возвращает.
+
+    :param task_data: полезная нагрузка, данные которые нужно обработать.
+    :param worker_id: ИД воркера, который выполняет задачу.
+
+    :return: (int, str) код обработки и ответ json строка
     """
     _tmp = json.loads(task_data)
     ip = _tmp['ip']
-    log = ''
+
+    ARP_LINE_RE = re.compile(
+        r'''
+        ^\S+                    # имя хоста (?)
+        \s+\((?P<ip>[^)]+)\)    # IP
+        \s+at\s+(?P<mac>\S+)    # MAC адрес или <incomplete>
+        \s+\[.*?]\s+on\s+       # пропускаем [ether] и on
+        (?P<interface>\S+)$     # имя интерфейса
+        ''',
+        re.VERBOSE
+    )
+
     data = {
-        "ip": ip,
-        "response": False,
-        "arp": 'NO DATA',
+        "success": False,
+        "response": None,
+        "error": None
     }
+
+    logger.info(f"[Consumer id:{worker_id}] Проверяю наличие ARP записи с IP {ip}")
     try:
-        log = f"/Выполняю задачу \'get_arp\' c IP {ip} на NAT-сервере (NSS)\n"
-        logger.info(f"[Consumer id:{id}] Проверяю наличие ARP записи с IP {ip}")
         # Выполняем команду на сервере
         process = await asyncio.create_subprocess_shell(
             '/usr/sbin/arp -a -n | grep -w \(%s\)' % ip,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        log += f"|Собираю данные... (NSS)\n"
         # Получаем вывод команды
         stdout, stderr = await process.communicate()
-        r = re.compile(r"^.+(%s).+(?P<mac>([0-9,a-f]{2}(-|:)*){6}).+$" % ip, re.DOTALL | re.IGNORECASE)
-        result = stdout.decode().strip()
-        log += f"\Выполнения задачи успешно (NSS)\n"
-        data['log'] = log
-        data['response'] = True
-        # Поиск результата
-        if re.match(r, result):
-            logger.info(f"[Consumer id:{id}] ARP запись с IP {ip} найдена")
-            result = re.search(r, result)
-            data['arp'] = result.groupdict()['mac']
-            return 0, json.dumps(data)
-        else:
-            logger.info(f"[Consumer id:{id}] ARP запись с IP {ip} НЕ найдена")
-            return 0, json.dumps(data)
-
     except Exception as e:
-        log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-        data['log'] = log
-        logger.error(f"[Consumer id:{id}]:get_arp: Error - {e}", exc_info=True)
+        logger.error(f"[Consumer id:{worker_id}] Не удалось выполнить команду '/usr/sbin/arp -a -n'. Error: {e}")
+        data["error"] = {"code": 3001, "msg": f"The command could not be executed '/usr/sbin/arp -a -n'. Error: {e}"}
         return 1, json.dumps(data)
 
+    logger.info(f"[Consumer id:{worker_id}] stdout={stdout}; stderr={stderr}")
+    data['success'] = True
 
-async def is_blocked(task_data, id):
+    # вывод команды
+    result = stdout.decode().strip()
+    # ищем по шаблону
+    m = ARP_LINE_RE.match(result)
+
+    if not m:
+        logger.info(f"[Consumer id:{worker_id}] ARP запись с IP {ip} НЕ найдена")
+        data["response"] = {"ip": ip, "mac": None, "interface": None}
+        return 0, json.dumps(data)
+    logger.info(f"[Consumer id:{worker_id}] ARP запись с IP {ip} найдена")
+    data["response"] = m.groupdict()
+    # {'ip': '10.41.42.7',
+    # 'mac': 'b0:19:21:0d:62:8b',
+    # 'interface': 'ens2.642'}
+    return 0, json.dumps(data)
+
+
+async def is_blocked(task_data, worker_id):
     """
-    Функция, которая проверяет нахождения определенного IP
-    в blocklist на NAT-сервере
-    :param task_data: полезная нагрузка, данные которые нужно обработать
-    :param id: ИД номер воркера, который выполняет задачу
-    :return: возвращаем код результата и полезную нагрузку для ответа
+    Проверяет нахождения определенного IP в ipset на NAT-сервере(тутс)
+
+    :param task_data:   полезная нагрузка, данные которые нужно обработать
+    :param worker_id:  ИД воркера, который выполняет задачу
+
+    :return: (int, str) код обработки и ответ json строка
     """
     _tmp = json.loads(task_data)
     ip = _tmp['ip']
-    mac = _tmp['mac']
-    log = ''
+    mac = _tmp['mac'] # пока не используется
+
     data = {
-        "ip": ip,
-        "response": False,
-        "log": '',
+        "success": False,
+        "response": None,
+        "error": None
     }
+
+    logger.info(f"[Consumer id:{worker_id}] Проверяю наличие IP {ip} в ipset")
     try:
-        log = f"/Выполняю задачу \'is_blocked\' c IP {ip} на NAT-сервере (NSS)\n"
-        logger.info(f"[Consumer id:{id}] Проверяю наличие IP {ip} в blocklist")
         # Выполняем команду на сервере
         process = await asyncio.create_subprocess_shell(
             '/sbin/ipset list | grep -w %s' % ip,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        log += f"|Собираю данные... (NSS)\n"
         # Получаем вывод команды
         stdout, stderr = await process.communicate()
-
-        log += f"\Выполнения задачи успешно (NSS)\n"
-        data['log'] = log
-        # Если вывод есть(блокирован), возвращаем True, иначе выводим False
-        if stdout.strip():
-            logger.info(f"[Consumer id:{id}] IP {ip} найден в blocklist")
-            data['response'] = True
-            return 0, json.dumps(data)
-        else:
-            logger.info(f"[Consumer id:{id}] IP {ip} НЕ найден в blocklist")
-            return 0, json.dumps(data)
-
     except Exception as e:
-        log += f"\Выполнения задачи НЕ успешно (NSS)\n"
-        data['log'] = log
-        logger.error(f"[Consumer id:{id}] Error", exc_info=True)
+        logger.error(f"[Consumer id:{worker_id}] Не удалось выполнить команду '/sbin/ipset list'. Error: {e}")
+        data["error"] = {"code": 3001, "msg": f"The command could not be executed '/sbin/ipset list'. Error: {e}"}
         return 1, json.dumps(data)
 
+    logger.info(f"[Consumer id:{worker_id}] stdout={stdout}; stderr={stderr}")
+    data["success"] = True
 
-async def process_diagnostic(task_data, id):
+    # Если вывод есть(блокирован), возвращаем True, иначе выводим False
+    if stdout.strip():
+        logger.info(f"[Consumer id:{worker_id}] IP {ip} найден в ipset")
+        data["response"] = True
+        return 0, json.dumps(data)
+
+    else:
+        data["response"] = False
+        logger.info(f"[Consumer id:{worker_id}] IP {ip} НЕ найден в ipset")
+        return 0, json.dumps(data)
+
+
+async def process_diagnostic(task_data, worker_id):
     """
     Функция прослойка, для распределения логики выполнения задач
     исходя из task задачи
 
     :param task_data: полезная нагрузка, данные которые нужно обработать
-    :param id: ИД номер воркера, который выполняет задачу
+    :param worker_id: ИД номер воркера, который выполняет задачу
 
     :return: возвращаем код результата и полезную нагрузку для ответа
     """
     task = json.loads(task_data)['task']
     match task:
         case 'is_blocked':
-            return await is_blocked(task_data, id)
+            return await is_blocked(task_data, worker_id)
         case 'get_arp':
-            return await get_arp(task_data, id)
+            return await get_arp(task_data, worker_id)
         case 'config_public_ip':
-            return await config_public_ip(task_data, id)
+            return await config_public_ip(task_data, worker_id)
         case 'unconfig_public_ip':
-            return await unconfig_public_ip(task_data, id)
+            return await unconfig_public_ip(task_data, worker_id)
         case _:
-            logger.error(f"[Consumer id:{id}] Некорректный запрос: отсутствует реализация текущей задачи: {task}")
+            logger.error(f"[Consumer id:{worker_id}] Некорректный запрос: отсутствует реализация текущей задачи: {task}")
             return 1, 1
